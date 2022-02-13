@@ -1,0 +1,100 @@
+'''
+Revit 2022
+Dynamo 2.10.1
+Uso: Dado un link y un workset Name - copia todos los elementos del archivo origen al archivo destino manteniendo el workset.
+	Entrada: nombre de workset (String). Link del archivo Origen (seleccionar en pantalla).
+	Salida:	Mensaje de éxito/fallo en la operación. En caso de éxito elementos copiados con workset cambiado. (Element)
+	Notas: Necesario insertar archivo origen como link y tener creados los worksets con el mismo nombre Origen - Destino.
+mail informacion: jj.laborda.lopez@gmail.com
+'''
+
+
+#BIBLIOTECAS
+#........................................................................
+import clr 
+
+clr.AddReference('RevitAPI') 
+from Autodesk.Revit.DB import *
+
+import sys 
+sys.path.append(r'C:\Users\jjlab\Documents\Dynamo\Funciones')
+from Funciones import *
+
+clr.AddReference('RevitAPIUI')
+from Autodesk.Revit.UI.Selection import *
+
+import System
+from System.Collections.Generic import List
+
+clr.AddReference('RevitServices')
+from RevitServices.Persistence import DocumentManager
+from RevitServices.Transactions import TransactionManager
+doc = DocumentManager.Instance.CurrentDBDocument
+uiapp = DocumentManager.Instance.CurrentUIApplication
+uidoc = uiapp.ActiveUIDocument
+
+#DEFINICION
+#........................................................................
+def elementos_copiar_entre_archivos_manteniendo_workset(linkOrigen, nombreWorkset):
+	"""
+	Uso: Dado un link y un workset Name - copia todos los elementos del archivo origen al archivo destino manteniendo el workset.
+	Entrada: nombre de workset (String). Link del archivo Origen (seleccionar en pantalla).
+	Salida:	Mensaje de éxito/fallo en la operación. En caso de éxito elementos copiados con workset cambiado. (Element)
+	Notas: Necesario insertar archivo origen como link y tener creados los worksets con el mismo nombre Origen - Destino.
+	"""
+	try:
+		#Accedemos al documento del Link
+		link = doc.GetElement(seleccion.ElementId)
+		linkdoc = link.GetLinkDocument()
+					
+		#Vamos a crear el filtro ElementParameterFilter()
+		#Parametro workset
+		paramWorkset = BuiltInParameter.ELEM_PARTITION_PARAM	
+		#Proveedor de valor
+		proveedor = ParameterValueProvider(ElementId(paramWorkset))	
+		#Evaluador
+		evaluador = FilterStringContains() 
+		regla = FilterStringRule(proveedor, evaluador, worksetName , True)		
+		#Filtro
+		filtro = ElementParameterFilter(regla)
+		#Colectamos elementos que tienen esos nombres.
+		colector = FilteredElementCollector(linkdoc).WherePasses(filtro).ToElements()
+		#iList de los elementos a copiar
+		elementos = list(colector)
+			
+		iElementos = List[ElementId]()
+		for e in elementos:
+			iElementos.Add(e.Id)
+						
+		#Inicio el copiado
+		TransactionManager.Instance.EnsureInTransaction(doc)
+		idsElementosCopiados = ElementTransformUtils.CopyElements(linkdoc, iElementos, doc, Transform.Identity, CopyPasteOptions())
+		elementosCopiados = [doc.GetElement(id) for id in idsElementosCopiados]
+							
+		#Colectamos workset en destino
+		worsetsDestino = FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset)
+		#Cogemos Id del workset
+		[w.Id.IntegerValue if w.Name == worksetName else 'Error' for w in worsetsDestino]
+		#Cambiamos workset de los elementos.
+		[i.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).Set(w.Id.IntegerValue) for i in elementosCopiados]		
+					
+		TransactionManager.Instance.TransactionTaskDone()
+		
+		salida = 'Éxito en la operación.'
+		
+	except:
+		salida == 'Algo ha fallado. Seleccione un link correcto o introduzca un worksetName correcto.'
+
+	return salida
+
+
+#ENTRADAS
+#........................................................................
+seleccion = uidoc.Selection.PickObject(ObjectType.Element, 'Seleccionar un link.')
+
+worksetName = IN[0];
+
+
+#SALIDA
+#........................................................................
+OUT = elementos_copiar_entre_archivos_manteniendo_workset(seleccion, worksetName)
